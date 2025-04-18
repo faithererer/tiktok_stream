@@ -1,4 +1,4 @@
-/* Basic reset and fullscreen settings (Keep as before) */
+/* Basic reset and fullscreen settings */
 html, body {
     margin: 0;
     padding: 0;
@@ -10,20 +10,20 @@ html, body {
     color: #fff;
 }
 
-/* Video container (Keep as before) */
+/* Video container */
 #video-container {
     height: 100vh;
     width: 100vw;
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
 }
 #video-container::-webkit-scrollbar {
-    display: none;
+    display: none; /* Chrome/Safari/Opera */
 }
 
-/* Video slide (Keep as before) */
+/* Video slide */
 .video-slide {
     height: 100vh;
     width: 100vw;
@@ -35,16 +35,16 @@ html, body {
     background-color: #000;
 }
 
-/* Video element (Keep as before) */
+/* Video element */
 .video-slide video {
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: contain; /* or cover */
+    object-fit: contain; /* Use 'cover' to fill, 'contain' to show whole video */
     cursor: pointer;
 }
 
-/* Loading/Error messages (Keep as before) */
+/* Loading/Error messages */
 .loading-indicator, .error-message {
     position: absolute;
     top: 50%;
@@ -58,35 +58,16 @@ html, body {
     z-index: 10;
 }
 .error-message { color: #ffdddd; }
-.slide-error-message { font-size: 14px; padding: 8px 12px; } /* Specific style for slide errors */
-
-
-/* --- NEW STYLES --- */
-
-/* Style for the toggle button */
-.control-button {
-    position: fixed; /* Keep it in view */
-    top: 15px;
-    right: 15px;
-    z-index: 100; /* Ensure it's above video content */
-    padding: 8px 15px;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    border-radius: 5px;
-    cursor: pointer;
+.slide-error-message {
     font-size: 14px;
-    transition: background-color 0.2s ease;
-}
-.control-button:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-}
-.control-button:active {
-     background-color: rgba(50, 50, 50, 0.8);
+    padding: 8px 12px;
+    bottom: 50px; /* Position slightly lower for slide-specific errors */
+    top: auto;
+    transform: translateX(-50%);
+    left: 50%;
 }
 
-
-/* Style for the index display */
+/* Index display */
 .video-index-display {
     position: absolute;
     bottom: 15px; /* Position from bottom */
@@ -103,8 +84,84 @@ html, body {
     transition: opacity 0.5s ease-in-out;
     pointer-events: none; /* Don't interfere with video clicks */
 }
-
-/* Class to make the index display visible */
 .video-index-display.visible {
     opacity: 1;
+}
+
+/* Container for all fixed controls */
+#controls {
+    position: fixed;
+    top: 10px;
+    right: 15px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column; /* Stack controls vertically */
+    align-items: flex-end; /* Align items to the right */
+    gap: 8px; /* Space between control groups */
+}
+
+/* Style for the toggle button */
+.control-button {
+    padding: 8px 15px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+.control-button:hover { background-color: rgba(0, 0, 0, 0.8); }
+.control-button:active { background-color: rgba(50, 50, 50, 0.8); }
+
+/* Container for jump input and button */
+.jump-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px; /* Space between input and button */
+}
+
+/* Style for the jump input */
+#jump-input {
+    width: 80px; /* Adjust width as needed */
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 4px;
+    font-size: 14px;
+    -moz-appearance: textfield; /* Hide number spinners in Firefox */
+}
+#jump-input::-webkit-outer-spin-button,
+#jump-input::-webkit-inner-spin-button {
+    -webkit-appearance: none; /* Hide number spinners in Chrome/Safari */
+    margin: 0;
+}
+#jump-input::placeholder {
+    color: #aaa;
+}
+
+/* Style for the jump button */
+#jump-button {
+    padding: 8px 12px;
+    background-color: rgba(0, 120, 255, 0.7); /* A slightly different color */
+    color: white;
+    border: 1px solid rgba(0, 120, 255, 0.9);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+#jump-button:hover {
+    background-color: rgba(0, 100, 220, 0.9);
+}
+#jump-button:active {
+    background-color: rgba(0, 80, 190, 0.9);
+}
+
+/* Disable controls visually */
+#controls button:disabled,
+#controls input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
