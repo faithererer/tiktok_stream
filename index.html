@@ -13,8 +13,14 @@
         <div class="loading-indicator">正在加载视频列表...</div>
     </div>
 
-    <!-- Toggle Button -->
-    <button id="toggle-mode-button" class="control-button">切换随机</button>
+    <!-- Controls Container -->
+    <div id="controls">
+        <button id="toggle-mode-button" class="control-button">切换顺序</button> <!-- Default text assumes starting in random -->
+        <div class="jump-controls">
+            <input type="number" id="jump-input" placeholder="输入行号" min="1">
+            <button id="jump-button">跳转</button>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
