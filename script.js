@@ -3,25 +3,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLoadingIndicator = document.querySelector('.loading-indicator');
     const toggleModeButton = document.getElementById('toggle-mode-button');
 
-    let originalVideoUrls = []; // Store the original order
-    let activeVideoUrls = [];   // Store the currently used order (sequential or shuffled)
-    let currentIndex = 0;
+    let originalVideoUrls = []; // Store the original order URLs
+    let activeVideoUrls = [];   // Store the currently used order URLs
+    let urlToOriginalIndexMap = new Map(); // <<< NEW: Map URL to its original line index (0-based)
+
+    let currentIndex = 0; // Index within the *active* list
     let currentVideoElement = null;
     let observer;
     let isUpdatingDOM = false;
-    let currentModeIsRandom = false; // Start in sequential mode
-    let indexDisplayTimeout = null; // Timeout handle for index display
+    let currentModeIsRandom = false;
+    let indexDisplayTimeout = null;
 
     // --- Configuration ---
-    // const USE_RANDOM_ORDER = false; // REMOVED - Now controlled by button
     const RENDER_BUFFER = 2;
     const PRELOAD_AHEAD = 1;
-    const INDEX_DISPLAY_DURATION_MS = 2500; // How long to show the index (in milliseconds)
+    const INDEX_DISPLAY_DURATION_MS = 2500;
     // --- Configuration End ---
 
-    // Fisher-Yates Shuffle
+    // Fisher-Yates Shuffle (same as before)
     function shuffleArray(array) {
-        const shuffled = [...array]; // Create a copy to shuffle
+        const shuffled = [...array];
         for (let i = shuffled.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -29,15 +30,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return shuffled;
     }
 
-    // createVideoSlide function (minor change: uses activeVideoUrls length)
-    function createVideoSlide(url, index) {
+    // createVideoSlide function (no major change needed here)
+    // It still receives the index relative to the *active* list for data-index attribute
+    function createVideoSlide(url, activeIndex) {
         const slide = document.createElement('div');
         slide.className = 'video-slide';
-        slide.dataset.index = index; // Index within the *active* list
+        slide.dataset.index = activeIndex; // Store the active index for DOM management
 
         // Add video element (same as before)
         const video = document.createElement('video');
-        video.src = url;
+        video.src = url; // The URL is stored here
         video.loop = true;
         video.playsInline = true;
         video.preload = 'metadata';
@@ -48,8 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         video.addEventListener('error', (e) => {
-            console.error(`Video loading error (Index ${index}): ${url}`, e);
-            displaySlideError(slide, '视频加载失败');
+            // Use the URL to find original index for error message
+            const originalIndex = urlToOriginalIndexMap.get(url);
+            const displayIndex = originalIndex !== undefined ? originalIndex + 1 : '?';
+            console.error(`Video loading error (Original Line ${displayIndex}, URL: ${url})`, e);
+            displaySlideError(slide, `视频加载失败 (源行: ${displayIndex})`);
         });
 
         const videoLoadingIndicator = document.createElement('div');
@@ -88,8 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- NEW: Show and hide index display ---
-    function showIndexDisplay(slideElement, index) {
+    // --- MODIFIED: Show and hide index display using original line number ---
+    function showIndexDisplay(slideElement) {
         // Remove any previous index display on this slide immediately
         const existingDisplay = slideElement.querySelector('.video-index-display');
         if (existingDisplay) {
@@ -101,13 +106,24 @@ document.addEventListener('DOMContentLoaded', () => {
             indexDisplayTimeout = null;
         }
 
+        const video = slideElement.querySelector('video');
+        if (!video) return; // Should not happen
+
+        const url = video.src;
+        const originalIndex = urlToOriginalIndexMap.get(url); // <<< Get original index from map
+
+        if (originalIndex === undefined) {
+            console.warn(`Could not find original index for URL: ${url}`);
+            return; // Don't display if mapping failed
+        }
+
         const indexDisplay = document.createElement('div');
         indexDisplay.className = 'video-index-display';
-        // Display 1-based index for user-friendliness, but track 0-based internally
-        indexDisplay.textContent = `# ${index + 1}`;
+        // Display 1-based original line number
+        indexDisplay.textContent = `# ${originalIndex + 1}`; // <<< Use originalIndex
         slideElement.appendChild(indexDisplay);
 
-        // Force reflow to ensure transition works
+        // Force reflow
         void indexDisplay.offsetWidth;
 
         // Make it visible
@@ -116,110 +132,104 @@ document.addEventListener('DOMContentLoaded', () => {
         // Set timeout to hide it
         indexDisplayTimeout = setTimeout(() => {
             indexDisplay.classList.remove('visible');
-            // Remove element after fade out transition completes
             setTimeout(() => {
-                 if (indexDisplay.parentNode === slideElement) { // Check if it wasn't already removed
+                 if (indexDisplay.parentNode === slideElement) {
                     indexDisplay.remove();
                  }
-            }, 500); // Corresponds to the transition duration in CSS
-            indexDisplayTimeout = null; // Clear the handle
+            }, 500);
+            indexDisplayTimeout = null;
         }, INDEX_DISPLAY_DURATION_MS);
     }
 
-     // --- Modified playVideo to show index ---
+     // --- Modified playVideo to call updated showIndexDisplay ---
      function playVideo(videoElement) {
         if (!videoElement) return;
         const slideElement = videoElement.parentElement;
-        const slideIndex = parseInt(slideElement.dataset.index, 10);
+        // const slideIndex = parseInt(slideElement.dataset.index, 10); // Active index, not needed for display now
 
         if (currentVideoElement && currentVideoElement !== videoElement && !currentVideoElement.paused) {
             console.log(`Pausing previous video: Index ${currentVideoElement.parentElement.dataset.index}`);
             currentVideoElement.pause();
-            // Optionally hide index display of previous video immediately
              const prevSlide = currentVideoElement.parentElement;
              const prevIndexDisplay = prevSlide.querySelector('.video-index-display');
              if (prevIndexDisplay) prevIndexDisplay.remove();
         }
 
         if (videoElement.paused) {
-            console.log(`Attempting to play video: Index ${slideIndex}`);
+            const url = videoElement.src;
+            const originalIndex = urlToOriginalIndexMap.get(url);
+            const displayIndex = originalIndex !== undefined ? originalIndex + 1 : '?';
+            console.log(`Attempting to play video: Original Line ${displayIndex}`);
+
             videoElement.play().then(() => {
-                console.log(`Video playing: Index ${slideIndex}`);
+                console.log(`Video playing: Original Line ${displayIndex}`);
                 currentVideoElement = videoElement;
-                showIndexDisplay(slideElement, slideIndex); // <<< Show index on successful play
+                showIndexDisplay(slideElement); // <<< Call with slideElement only
             }).catch(error => {
-                console.warn(`Autoplay failed for video ${slideIndex}: `, error);
+                console.warn(`Autoplay failed for video (Original Line ${displayIndex}): `, error);
                  if (!videoElement.muted) {
-                    console.log(`Attempting muted playback for video ${slideIndex}`);
+                    console.log(`Attempting muted playback for video (Original Line ${displayIndex})`);
                     videoElement.muted = true;
                     videoElement.play().then(() => {
-                        console.log(`Muted playback successful for video ${slideIndex}`);
+                        console.log(`Muted playback successful for video (Original Line ${displayIndex})`);
                         currentVideoElement = videoElement;
-                        showIndexDisplay(slideElement, slideIndex); // <<< Show index on successful muted play
+                        showIndexDisplay(slideElement); // <<< Call with slideElement only
                     }).catch(muteError => {
-                        console.error(`Muted playback also failed for video ${slideIndex}: `, muteError);
-                         displaySlideError(videoElement.parentElement, '播放失败，请尝试点击');
+                        console.error(`Muted playback also failed for video (Original Line ${displayIndex}): `, muteError);
+                         displaySlideError(videoElement.parentElement, `播放失败 (源行: ${displayIndex})`);
                     });
                  } else {
-                     displaySlideError(videoElement.parentElement, '播放失败，请尝试点击');
+                     displaySlideError(videoElement.parentElement, `播放失败 (源行: ${displayIndex})`);
                  }
             });
         } else {
-             // If already playing (e.g., user clicked play), ensure index is shown
+             // If already playing
              currentVideoElement = videoElement;
-             showIndexDisplay(slideElement, slideIndex); // <<< Show index if already playing
+             showIndexDisplay(slideElement); // <<< Call with slideElement only
         }
     }
 
-    // pauseVideo function (modified to potentially hide index)
+    // pauseVideo function (same as before, implicitly handles index removal via playVideo)
     function pauseVideo(videoElement) {
         if (videoElement && !videoElement.paused) {
-             const slideIndex = videoElement.parentElement.dataset.index;
-             console.log(`Pausing video: Index ${slideIndex}`);
+             const url = videoElement.src;
+             const originalIndex = urlToOriginalIndexMap.get(url);
+             const displayIndex = originalIndex !== undefined ? originalIndex + 1 : '?';
+             console.log(`Pausing video: Original Line ${displayIndex}`);
             videoElement.pause();
-            // Optionally hide index immediately on pause
-             const indexDisplay = videoElement.parentElement.querySelector('.video-index-display');
-             if (indexDisplay) {
-                 indexDisplay.remove();
-                 if (indexDisplayTimeout) {
-                     clearTimeout(indexDisplayTimeout);
-                     indexDisplayTimeout = null;
-                 }
-             }
+            // Index removal is handled when the *next* video plays or by timeout
         }
         if (currentVideoElement === videoElement) {
             currentVideoElement = null;
         }
     }
 
-    // setupIntersectionObserver function (minor change in callback)
+    // setupIntersectionObserver function (no change needed here)
     function setupIntersectionObserver() {
-        const options = {
+         const options = {
             root: videoContainer,
             rootMargin: '0px',
             threshold: 0.8
         };
-
         const callback = (entries) => {
             entries.forEach(entry => {
                 const slideElement = entry.target;
                 const video = slideElement.querySelector('video');
-                const slideIndex = parseInt(slideElement.dataset.index, 10);
+                const slideIndex = parseInt(slideElement.dataset.index, 10); // Active index
 
                 if (!video) return;
 
                 if (entry.isIntersecting && entry.intersectionRatio >= 0.8) {
-                    console.log(`Video ${slideIndex} reached threshold`);
+                    // console.log(`Video ${slideIndex} reached threshold`); // Log active index
                     if (slideIndex !== currentIndex) {
                         currentIndex = slideIndex;
-                        // Use setTimeout for updateRenderedSlides to avoid blocking observer
                         setTimeout(updateRenderedSlides, 0);
                     }
-                    playVideo(video); // Play video (will handle index display)
-                    preloadNeighborVideos(slideIndex);
+                    playVideo(video);
+                    preloadNeighborVideos(slideIndex); // Preload based on active index
                 } else {
                     if (!video.paused) {
-                        pauseVideo(video); // Pause video (will handle index display removal)
+                        pauseVideo(video);
                     }
                 }
             });
@@ -228,30 +238,27 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("IntersectionObserver created.");
     }
 
-    // preloadNeighborVideos function (uses activeVideoUrls length)
+    // preloadNeighborVideos function (no change needed here, uses active index)
     function preloadNeighborVideos(centerIndex) {
         for (let i = 1; i <= PRELOAD_AHEAD; i++) {
-            // Preload next
             const nextIndex = centerIndex + i;
-             // Check bounds against the *active* list length
             if (nextIndex < activeVideoUrls.length) {
                 const nextSlide = videoContainer.querySelector(`.video-slide[data-index="${nextIndex}"]`);
                 if (nextSlide) {
                     const nextVideo = nextSlide.querySelector('video');
                     if (nextVideo && nextVideo.preload !== 'auto') {
-                        console.log(`Preloading video: Index ${nextIndex}`);
+                        // console.log(`Preloading video: Active Index ${nextIndex}`);
                         nextVideo.preload = 'auto';
                     }
                 }
             }
-            // Preload previous
             const prevIndex = centerIndex - i;
-            if (prevIndex >= 0) { // Check lower bound
+            if (prevIndex >= 0) {
                  const prevSlide = videoContainer.querySelector(`.video-slide[data-index="${prevIndex}"]`);
                 if (prevSlide) {
                     const prevVideo = prevSlide.querySelector('video');
                     if (prevVideo && prevVideo.preload !== 'auto') {
-                        console.log(`Preloading video: Index ${prevIndex}`);
+                        // console.log(`Preloading video: Active Index ${prevIndex}`);
                         prevVideo.preload = 'auto';
                     }
                 }
@@ -259,22 +266,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
-    // updateRenderedSlides function (uses activeVideoUrls)
+    // updateRenderedSlides function (no change needed here, uses active urls/indices)
     async function updateRenderedSlides() {
-        if (!observer) {
-            console.warn("updateRenderedSlides called before observer was initialized.");
-            return;
-        }
-        if (isUpdatingDOM) {
-            console.log("DOM update already in progress, skipping.");
-            return;
-        }
+        if (!observer) return;
+        if (isUpdatingDOM) return;
         isUpdatingDOM = true;
-        console.log(`Updating rendered slides around index: ${currentIndex}`);
+        // console.log(`Updating rendered slides around active index: ${currentIndex}`);
 
         const requiredStartIndex = Math.max(0, currentIndex - RENDER_BUFFER);
-        // Use activeVideoUrls.length for upper bound
         const requiredEndIndex = Math.min(activeVideoUrls.length - 1, currentIndex + RENDER_BUFFER);
 
         const currentSlides = new Map();
@@ -292,7 +291,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         for (let i = requiredStartIndex; i <= requiredEndIndex; i++) {
-            // Ensure index is valid for activeVideoUrls
             if (i >= 0 && i < activeVideoUrls.length && !currentSlides.has(i)) {
                 indicesToAdd.push(i);
             }
@@ -300,25 +298,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- Perform DOM Operations ---
         if (slidesToRemove.length > 0) {
-            console.log(`Removing ${slidesToRemove.length} slides.`);
+            // console.log(`Removing ${slidesToRemove.length} slides.`);
             slidesToRemove.forEach(slide => {
                 const video = slide.querySelector('video');
                 if (video && !video.paused) video.pause();
                 observer.unobserve(slide);
                 slide.remove();
-                console.log(`Removed slide: Index ${slide.dataset.index}`);
+                // console.log(`Removed slide: Active Index ${slide.dataset.index}`);
             });
         }
 
         if (indicesToAdd.length > 0) {
-            console.log(`Adding ${indicesToAdd.length} new slides.`);
+            // console.log(`Adding ${indicesToAdd.length} new slides.`);
             indicesToAdd.sort((a, b) => a - b);
 
-            indicesToAdd.forEach(index => {
-                // Check index bounds again just in case
+            indicesToAdd.forEach(index => { // index here is the *active* index
                 if (index >= 0 && index < activeVideoUrls.length) {
-                    // Use URL from activeVideoUrls
-                    const newSlide = createVideoSlide(activeVideoUrls[index], index);
+                    const url = activeVideoUrls[index]; // Get URL from active list
+                    const newSlide = createVideoSlide(url, index); // Pass URL and active index
                     let inserted = false;
                     const existingSlides = videoContainer.querySelectorAll('.video-slide');
                     for (let j = 0; j < existingSlides.length; j++) {
@@ -333,114 +330,104 @@ document.addEventListener('DOMContentLoaded', () => {
                         videoContainer.appendChild(newSlide);
                     }
                     observer.observe(newSlide);
-                    console.log(`Added and observing slide: Index ${index}`);
-                } else {
-                     console.warn(`Attempted to add slide with invalid index: ${index}`);
+                    // console.log(`Added and observing slide: Active Index ${index}`);
                 }
             });
         }
 
         await new Promise(resolve => setTimeout(resolve, 50));
         isUpdatingDOM = false;
-        console.log("DOM update finished.");
+        // console.log("DOM update finished.");
     }
 
-    // --- NEW: Function to handle mode toggle ---
+    // handleToggleMode function (no change needed here)
     async function handleToggleMode() {
-        currentModeIsRandom = !currentModeIsRandom; // Toggle the mode flag
+         currentModeIsRandom = !currentModeIsRandom;
         console.log(`Switching mode. Random mode is now: ${currentModeIsRandom}`);
-
-        // Update the button text
         toggleModeButton.textContent = currentModeIsRandom ? '切换顺序' : '切换随机';
 
-        // Update the active video list
         if (currentModeIsRandom) {
             activeVideoUrls = shuffleArray(originalVideoUrls);
         } else {
-            activeVideoUrls = [...originalVideoUrls]; // Use a copy of the original
+            activeVideoUrls = [...originalVideoUrls];
         }
 
-        // Reset state and UI
-        currentIndex = 0; // Go back to the beginning of the new list
-        currentVideoElement = null; // No video is playing
-        if (indexDisplayTimeout) { // Clear any pending index display timeout
+        currentIndex = 0;
+        currentVideoElement = null;
+        if (indexDisplayTimeout) {
              clearTimeout(indexDisplayTimeout);
              indexDisplayTimeout = null;
         }
 
-        // Clear existing slides from the container
         console.log("Clearing existing slides...");
-        // Stop observing all current slides before removing
         videoContainer.querySelectorAll('.video-slide').forEach(slide => observer.unobserve(slide));
-        videoContainer.innerHTML = ''; // Remove all children
+        videoContainer.innerHTML = '';
 
-        // Show a temporary loading state? Optional.
-        // videoContainer.innerHTML = '<div class="loading-indicator">切换模式中...</div>';
-        // await new Promise(resolve => setTimeout(resolve, 50)); // Short delay
-
-        // Re-render slides based on the new list and currentIndex (0)
         console.log("Rendering initial slides for new mode...");
         await updateRenderedSlides();
 
-        // Scroll to the top (first video)
         console.log("Scrolling to top...");
-         videoContainer.scrollTop = 0; // Instant scroll to top is usually fine here
+         videoContainer.scrollTop = 0;
 
-        // Find and potentially preload the new first video after render
         const firstSlide = videoContainer.querySelector('.video-slide[data-index="0"]');
         if (firstSlide) {
-             // Let the observer trigger play, but preload neighbors
              preloadNeighborVideos(0);
         } else {
             console.warn("Could not find the first slide after mode toggle.");
         }
     }
 
-
-    // Initialize function (modified)
+    // Initialize function (MODIFIED to create the map)
     async function initialize() {
         try {
             const response = await fetch('index.txt');
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
             const text = await response.text();
-            originalVideoUrls = text.split('\n').map(line => line.trim()).filter(line => line); // Store original
+            originalVideoUrls = text.split('\n').map(line => line.trim()).filter(line => line);
 
             if (originalVideoUrls.length === 0) throw new Error('index.txt is empty or invalid.');
             console.log(`Loaded ${originalVideoUrls.length} video URLs.`);
 
-            // Set initial active list based on starting mode (sequential)
+            // <<< --- NEW: Create the URL to Original Index Map --- >>>
+            urlToOriginalIndexMap.clear(); // Clear previous map if any
+            originalVideoUrls.forEach((url, index) => {
+                if (!urlToOriginalIndexMap.has(url)) {
+                    urlToOriginalIndexMap.set(url, index); // Map URL -> 0-based index
+                } else {
+                    // Handle duplicate URLs if necessary (e.g., log warning)
+                    console.warn(`Duplicate URL found at line ${index + 1}: ${url}. Mapping will point to the first occurrence.`);
+                }
+            });
+            console.log("URL to original index map created.");
+            // <<< --- End of Map Creation --- >>>
+
             activeVideoUrls = [...originalVideoUrls];
-            currentModeIsRandom = false; // Explicitly set initial state
-            toggleModeButton.textContent = '切换随机'; // Set initial button text
+            currentModeIsRandom = false;
+            toggleModeButton.textContent = '切换随机';
 
             if (initialLoadingIndicator) initialLoadingIndicator.remove();
 
-            // Setup observer FIRST
             setupIntersectionObserver();
 
-            // Render initial slides using activeVideoUrls
             await updateRenderedSlides();
 
-            // Add event listener for the toggle button
             toggleModeButton.addEventListener('click', handleToggleMode);
 
-            // Scroll to the first slide initially
             const firstSlide = videoContainer.querySelector('.video-slide[data-index="0"]');
             if (firstSlide) {
                  setTimeout(() => {
                       if (document.body.contains(firstSlide)) {
                            firstSlide.scrollIntoView({ behavior: 'auto', block: 'start' });
                            console.log("Scrolled to initial video.");
-                           preloadNeighborVideos(0); // Preload neighbors
+                           preloadNeighborVideos(0);
                       }
                  }, 150);
             } else {
                 console.warn("Could not find the initial slide (index 0) to scroll to or render.");
-                 // Handle case where index.txt might be valid but very short, or other issues
                  if (activeVideoUrls.length > 0) {
                      console.error("Initialization state inconsistent: Videos loaded but first slide not found.");
                  } else {
-                      displaySlideError(videoContainer, "没有可显示的视频"); // Show error if no videos loaded at all
+                      displaySlideError(videoContainer, "没有可显示的视频");
                  }
             }
 
@@ -452,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
             videoContainer.innerHTML = '';
             videoContainer.appendChild(errorElement);
             if (initialLoadingIndicator) initialLoadingIndicator.remove();
-            toggleModeButton.disabled = true; // Disable button if init fails
+            toggleModeButton.disabled = true;
         }
     }
 
